@@ -1,24 +1,32 @@
 package com.pgq.simpleweather;
 
 import android.os.Bundle;
-import android.support.v4.widget.SwipeRefreshLayout;
-import android.support.v7.app.ActionBarActivity;
-import android.util.Log;
+import android.support.v4.widget.ContentLoadingProgressBar;
+import android.support.v7.app.AppCompatActivity;
+import android.view.View;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import com.google.gson.JsonObject;
+import com.google.gson.Gson;
 import com.koushikdutta.async.future.FutureCallback;
 import com.koushikdutta.ion.Ion;
+import com.pgq.simpleweather.Bean.CurrentWeatherBean;
+import com.pgq.simpleweather.Utils.APIUtils;
 import com.pgq.simpleweather.Utils.LocationUtils;
-import com.pgq.simpleweather.Utils.StringUtils;
+import com.pgq.simpleweather.Utils.TimeUtils;
 import com.pgq.simpleweather.Utils.ToastUtils;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.text.DecimalFormat;
 
 import butterknife.ButterKnife;
 import butterknife.InjectView;
 
 
-public class MainActivity extends ActionBarActivity {
+public class MainActivity extends AppCompatActivity {
 
     @InjectView(R.id.cityName)
     TextView mCityName;
@@ -28,11 +36,15 @@ public class MainActivity extends ActionBarActivity {
     TextView mTemperature;
     @InjectView(R.id.temperature_unit)
     TextView mTemperatureUnit;
-    @InjectView(R.id.Main_swipe)
-    SwipeRefreshLayout mMainSwipe;
+    @InjectView(R.id.currentWeatherTime)
+    TextView mCurrentWeatherTime;
+    @InjectView(R.id.loading)
+    LinearLayout mLoading;
+    @InjectView(R.id.loading_text)
+    TextView mLoadingText;
+    @InjectView(R.id.loading_progress)
+    ContentLoadingProgressBar mLoadingProgress;
 
-
-    LocationUtils locationUtils = new LocationUtils();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,26 +52,96 @@ public class MainActivity extends ActionBarActivity {
         setContentView(R.layout.activity_main);
         ButterKnife.inject(this);
 
-        double[] loc = locationUtils.getLocation(getApplicationContext());
-        Log.i("aaa",loc+"");
-//        String latitude = String.valueOf(loc[0]);
-//        String longitude = String.valueOf(loc[1]);
-        String latitude = 32+"";
-        String longitude = 112+"";
-        String url = "http://api.openweathermap.org/data/2.5/weather?lat="+latitude+"&lon="+longitude+"&lang=zh_cn&cnt=10";
+        disptcher();
+    }
 
-        Ion.with(getApplicationContext()).load(url).asJsonObject().setCallback(new FutureCallback<JsonObject>() {
+    private void disptcher() {
+        String url = getUrl();
+        getCurrentWeather(url);
+    }
+
+    private void getCurrentWeather(String url) {
+        Ion.with(getApplicationContext()).load(url).asString().setCallback(new FutureCallback<String>() {
             @Override
-            public void onCompleted(Exception e, JsonObject jsonObject) {
-                    if (StringUtils.isEmpty(e.getMessage())){
-                        ToastUtils.info(getApplicationContext(),"错误");
-                    }else{
-
+            public void onCompleted(Exception e, String s) {
+                if (e != null) {
+                    loadFailed();
+                } else {
+                    try {
+                        JSONObject jsonObject = new JSONObject(s);
+                        String cod = jsonObject.getString("cod");
+                        if (cod.equals("200")) {
+                            getCurrentSuccess(s);
+                            dismissLoading();//
+                        } else if (cod.equals("404")) {
+                            ToastUtils.info(getApplicationContext(), jsonObject.getString("Message"));
+                            loadFailed();
+                        }
+                    } catch (JSONException e1) {
+                        e1.printStackTrace();
+                        loadFailed();
                     }
+                }
             }
         });
+    }
 
+    private void getCurrentSuccess(String s) {
+        CurrentWeatherBean currentWeatherBean = new Gson().fromJson(s, CurrentWeatherBean.class);
+        String cityName = currentWeatherBean.getName();
+        String icon = currentWeatherBean.getWeather().get(0).getIcon();
+        String temperature = new DecimalFormat("###.0").format(currentWeatherBean.getMain().getTemp());
+        String currentWeatherTime = TimeUtils.Unix2Time(currentWeatherBean.getDt() + "");
+        int condition = currentWeatherBean.getWeather().get(0).getId();
+
+        int[] iconinfo = WeatherUtils.updateWeatherIcon(condition, isNight(icon), 0);
+        updatePictures(iconinfo[0], iconinfo[1]);
+
+        mCityName.setText(cityName);
+        mTemperature.setText(temperature);
+        mCurrentWeatherTime.setText(currentWeatherTime);
+    }
+
+    private void updatePictures(int index, int name) {
+        switch (index) {
+            case 0:
+                mCurrentWeatherIcon.setImageResource(name);
+                break;
+            case 1:
+                mCurrentWeatherIcon.setImageResource(name);
+                break;
+            case 2:
+                mCurrentWeatherIcon.setImageResource(name);
+                break;
+            case 3:
+                mCurrentWeatherIcon.setImageResource(name);
+                break;
+            case 4:
+                mCurrentWeatherIcon.setImageResource(name);
+                break;
+        }
     }
 
 
+    private boolean isNight(String icon) {
+        return icon.contains("n");
+    }
+
+    private String getUrl() {
+        LocationUtils locationUtils = new LocationUtils();
+        double[] loc = locationUtils.getLocation(getApplicationContext());
+        String latitude = String.valueOf(loc[0]);
+        String longitude = String.valueOf(loc[1]);
+        return APIUtils.CURRENTURL + "lat=" + latitude + "&lon=" + longitude + "&lang=zh_cn&cnt=10&units=metric";
+    }
+
+    public void dismissLoading() {
+        mLoading.setVisibility(View.GONE);
+        mLoadingProgress.setVisibility(View.GONE);
+    }
+
+    public void loadFailed() {
+        mLoadingText.setText("Load Failed");
+        mLoadingProgress.setVisibility(View.GONE);
+    }
 }
